@@ -1,0 +1,48 @@
+/* Styles go here */
+
+.cms-tree ol{
+   list-style: none;
+}
+
+
+.cms-tree ol li{
+     margin-left: -25px;
+}
+
+.cms-tree .node-content{
+  margin-left: -5px;
+}
+
+.cms-tree .node-name{
+  padding-left: 5px;
+}
+
+.cms-tree .node-hidden{
+  border: 5px solid transparent;
+}
+
+.cms-tree .highlighted{
+  background-color: #eee;
+}
+
+.cms-tree input[type=checkbox]{
+  margin-left: 7px;
+  margin-right: -3px;
+  vertical-align: middle;
+  margin-bottom: 2px;
+  margin-top: 2px;
+  position: inherit;
+}
+
+.cms-tree .placeholder{
+  margin-left: -3px;
+  min-height: 5px;
+  background-color: #ccc;
+}
+
+
+.icon-null{
+  width: 10px;
+  
+}
+
