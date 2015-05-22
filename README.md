@@ -1,3 +1,3 @@
 # ReactTree
 Treeview draggable using ReactJs
-<a href="https://github.com/LuanNg/ReactTree">Demo</a>
+<a href="http://luanng.github.io/">Demo</a>
