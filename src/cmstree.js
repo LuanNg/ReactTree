@@ -15,16 +15,19 @@
     }
 })(function () {
 
+function CMSTree(el, def, options) {
+
 var placeholder = null;
 var dragged;
 var over;
 var dragData;
 var dropData;
 var selectedNode = {};
-var filterText = "";
+var element;
+var allowDrop = false;
 
 
-var defCol = {
+var defOriginal = {
   Id:'Id',
   Name: 'Name',
   Type: 'Type',
@@ -34,30 +37,38 @@ var defCol = {
   Model: {}
 }
 
-var settings= {
+var defCol = {}
+
+var opNode = {
   Node: {
     IsShowIcon: true,
-    IsShowCheckBox: false,
+    IsShowCheckBox: true,
     IsShowRootNode: true,
     IsShowNodeMenu: true,
-    IsShowCount: true,
+    IsShowCount: false,
     IsShowAddNodeButton: true,
     IsShowAddItemButton: true,
     IsShowEditButton: true,
-    IsShowDelButton: true
+    IsShowDelButton: true,
+    IsDraggable: true,
+    IsCollapsedAll: null
   },
   Item: {
     IsShowItemMenu: true,
     IsShowDelButton: true,
     IsShowEditButton: true,
     IsShowIcon: true,
-    IsHightlightFilter: false
+    IsAllowFilter: true,
+    IsHightlightFilter: true
   },
   Icon: {
-    Expand: 'fa fa-plus-square-o',
-    Collpased: 'fa fa-minus-square-o',
-    NodeExpand: 'fa fa-building',
-    NodeCollpased: 'fa fa-building-o',
+    Expand: 'fa fa-minus-square-o',
+    Collpased: 'fa fa-plus-square-o',
+    NodeExpand: 'fa fa-folder-open',
+    GroupExpand: 'fa fa-building',
+    NodeCollpased: 'fa fa-folder',
+    GroupCollpased: 'fa fa-building-o',
+    RootIcon: 'fa fa-cloud',
     NodeAdd:'fa fa-plus',
     NodeAddItem:'fa fa-plus-circle',
     NodeEdit: 'fa fa-pencil',
@@ -73,64 +84,94 @@ var settings= {
     EditItem: null,
     DelItem: null,
     SelectedNode: selectedNode,
-    filterText: filterText,
+    SelectedFn: null,
+    filterText: "",
     DragStart: null,
     DragOver: null,
     DragEnd: null
   }
+  
+};
+
+var settings= {}
+
+var NType = {
+  Folder: 0,
+  Group: 2,
+  File: 1
 }
 
+var NodeType = {}
 
-var TreeNodeContent = React.createClass({
+var TreeNodeContent = React.createClass({displayName: "TreeNodeContent",
       checkFn: function(chck, scope){
         checkNodeStatus(this.props.node, this.refs.checkbox);
-          this.props.check(chck);
+          this.props.refresh(chck);
         },
         toogleExpand: function(){
            this.props.collapsed = !this.props.collapsed;
            this.props.toggleCollapsed(this.props.collapsed);
         },
         selectedNodeFn: function(){
-          this.props.selectedNode = this.props.node;
-          this.forceUpdate();
+          settings.CallBack.selectedNode = this.props.node;
+          if(settings.CallBack.SelectedFn){
+            settings.CallBack.SelectedFn(this.props.node, this);
+          }
+          //this.forceUpdate();
+          this.props.refresh();
+        },
+        addNode: function(scope){
+          AddNode(this);
+        },
+        addNodeItem: function(scope){
+          AddNode(this);
+        },
+        editNode: function(scope){
+          EditNode(this);
+        },
+        delNode: function(scope){
+          DelNode(this);
         },
         render: function() {
             var node = this.props.node;
             var classSelect, addRegion, addSite, editRegionSite, deleteRegionSite, sitecount, boxcontrol, checkbox;
             var collapsed = this.props.collapsed;
 
-            if (this.props.selectedNode && this.props.selectedNode[defCol.Id] === this.props.node[defCol.Id]) {
+            if (settings.CallBack.selectedNode && settings.CallBack.selectedNode[defCol.Id] === this.props.node[defCol.Id]) {
                 classSelect = 'select';
             }
 
-            var classCollapsed = collapsed === true ? settings.Icon.Expand : settings.Icon.Collpased;
-     
-            var classText = collapsed === true ? settings.Icon.NodeExpand : settings.Icon.NodeCollpased;
+            var classCollapsed = collapsed === true ? settings.Icon.Collpased : settings.Icon.Expand;
+              
+            var classText;
+            if(this.props.isRootNode && this.props.isRootNode === true){
+              classText = settings.Icon.RootIcon;
+            }else{
+                classText = collapsed === true ? this.props.Icon.Collapsed : this.props.Icon.Expand;
+            }
             classText = settings.Node.IsShowIcon === true ? classText: '';
             
             var textConent = (
-               <a className = 'btn btn-xs' onClick={this.selectedNodeFn.bind(this)}>
-                   <i className={classText}></i>
-                   <ContentHightLight  node={this.props.node} filterText = {this.props.filterText} />
-               </a>
+               React.createElement("a", {className: "btn btn-xs", onClick: this.selectedNodeFn.bind(this)}, 
+                   React.createElement("i", {className: classText}), 
+                   React.createElement(ContentHightLight, {node: this.props.node, filterText: this.props.filterText})
+               )
             );
-            //<span className="node-name">{node[defCol.Name]}</span>
          
-            sitecount =  settings.Node.IsShowCount === true ?  (<b className="badge pull-right">{node[defCol.Count]}</b>) : sitecount;
+            sitecount =  settings.Node.IsShowCount === true ?  (React.createElement("b", {className: "badge pull-right"}, node[defCol.Count])) : sitecount;
 
-            editRegionSite = settings.Node.IsShowEditButton === true ?  ( <a className="btn btn-xs" ><i className= {settings.Icon.NodeEdit}></i></a>) : editRegionSite;
-            addRegion= settings.Node.IsShowAddNodeButton === true ? (<a className="btn btn-xs"> <i className= {settings.Icon.NodeAdd}></i></a>) : addRegion;
-            addSite = settings.Node.IsShowAddItemButton === true ? (<a className="btn btn-xs"><i className= {settings.Icon.NodeAddItem}></i></a>) : addSite;
+            editRegionSite = settings.Node.IsShowEditButton === true ?  ( React.createElement("a", {className: "btn btn-xs edit", onClick: this.editNode.bind(this)}, React.createElement("i", {className: settings.Icon.NodeEdit}))) : editRegionSite;
+            addRegion= settings.Node.IsShowAddNodeButton === true ? (React.createElement("a", {className: "btn btn-xs add", onClick: this.addNode.bind(this)}, " ", React.createElement("i", {className: settings.Icon.NodeAdd}))) : addRegion;
+            addSite = settings.Node.IsShowAddItemButton === true ? (React.createElement("a", {className: "btn btn-xs add", onClick: this.addNodeItem.bind(this)}, React.createElement("i", {className: settings.Icon.NodeAddItem}))) : addSite;
           
-            if(settings.Node.IsShowDelButton === true && node[defCol.Type] ===0 && node[defCol.Childs].length === 0){
-                deleteRegionSite = (<a className="btn btn-xs"><i className= {settings.Icon.NodeDel}></i></a>);
+            if(settings.Node.IsShowDelButton === true && node[defCol.Childs].length === 0){
+                deleteRegionSite = (React.createElement("a", {className: "btn btn-xs del", onClick: this.delNode.bind(this)}, React.createElement("i", {className: settings.Icon.NodeDel})));
             }
             
-            //checkbox = settings.Node.IsShowCheckBox === true? (<input type="checkbox" />) : checkbox;
             if(settings.Node.IsShowCheckBox === true){
               var checkstats =  this.props.node[defCol.Checked] === 1? true: false;
-              checkbox =  (<input type="checkbox" checked={checkstats} ref="checkbox" onClick={this.checkFn.bind(this,node)} />);
-              if(this.props.node[defCol.Checked] === -1){
+              checkbox =  (React.createElement("input", {type: "checkbox", checked: checkstats, ref: "checkbox", onClick: this.checkFn.bind(this,node)}));
+              if(React.findDOMNode(this.refs.checkbox) && this.props.node[defCol.Checked] === -1){
                 React.findDOMNode(this.refs.checkbox).indeterminate = true
               }else if(React.findDOMNode(this.refs.checkbox)){
                 React.findDOMNode(this.refs.checkbox).indeterminate = false; //indeterminate
@@ -138,58 +179,37 @@ var TreeNodeContent = React.createClass({
             }
             
             boxcontrol = settings.Node.IsShowNodeMenu === true ?  (
-               <b className="control-group pull-right">
-                  {addRegion}
-                  {addSite}
-                  {editRegionSite}
-                  {deleteRegionSite}
-              </b>
+               React.createElement("b", {className: "control-group pull-right"}, 
+                  addRegion, 
+                  addSite, 
+                  editRegionSite, 
+                  deleteRegionSite
+              )
               ) :boxcontrol ;
           
-            return (<div className = {classSelect}>
-                <div className="tree-node-content">
-                    <a className = "btn btn-xs" onClick={this.toogleExpand}><i className={classCollapsed}></i></a>
-                    <span className="node-content">
-                        {checkbox}
-                        {textConent}
-                        {sitecount}
-                        {boxcontrol}
-                    </span>
-                </div>
-            </div>);
+            return (React.createElement("div", {className: classSelect}, 
+                React.createElement("div", {className: "tree-node-content"}, 
+                    React.createElement("a", {className: "btn btn-xs", onClick: this.toogleExpand}, React.createElement("i", {className: classCollapsed})), 
+                    React.createElement("span", {className: "node-content"}, 
+                        checkbox, 
+                        textConent, 
+                        sitecount, 
+                        boxcontrol
+                    )
+                )
+            ));
             }
     });
  
-var TreeNode = React.createClass({
-    //getInitialState: function() {
-    //    var node = this.props.node;
-    //    return {
-    //        node: node
-    //    }
-    //},
-    checkFn: function(chck, scope){
-       this.props.check(chck);
+var TreeNode = React.createClass({displayName: "TreeNode",
+    //checkFn: function(chck, scope){
+    //   this.props.check(chck);
+     //},
+     refreshFn: function(chck, scope){
+       this.props.refresh(chck);
      },
     dragStart: function(e) {
-         //  e.preventDefault();
-          e.stopPropagation();
-          
-          dragged = e.currentTarget; 
-          //console.log(this.dragged);
-          //this.dragged.style = "display: 'none;'";
-          e.dataTransfer.effectAllowed = 'move';
-          //this.state.node = this.props.node;
-          //console.log(e.currentTarget.dataset);
-          dragData = this;
-          console.log(dragData);
-
-          e.dataTransfer.setData("text/html", e.currentTarget);
-          
-          if(settings.CallBack.DragStart && typeof settings.CallBack.DragStart === 'function'){
-               settings.CallBack.DragStart(e, this);
-          }
-          
-         
+       dragStartFn(this, e)    
     },
     dragEnd: function(e) {
       dragEndFn(this, e);
@@ -208,159 +228,321 @@ var TreeNode = React.createClass({
 
         var treenode = [];
         if (node[defCol.Childs] && node[defCol.Childs].length > 0) {
+          
+          //treenode = node[defCol.Childs].map(function(n,i){
+          //  if(settings.Item.IsAllowFilter === true){
+          //        var reg = RegExp('(' + this.props.filterText + ')', 'gi');
+          //        if (n[defCol.Type] === 1 &&  n[defCol.Name].search(reg) === -1) {
+          //          return;
+          //        }
+          //     }
+          //     return (<li data-id={i} key={i} draggable="true" data-drag-handle="true" onDragEnd={this.dragEnd} onDragStart={this.dragStart}><Tree node = {n} filterText = {this.props.filterText} check={this.checkFn} /></li>);
+          //}.bind(this));
+          
              
-            node[defCol.Childs].forEach(function(n,i) {
-                if (n.Type === 1 &&  n.Name.indexOf(this.props.filterText) === -1) {
-                  return;
+           node[defCol.Childs].forEach(function(n,i) {
+                if(settings.Item.IsAllowFilter === true){
+                  var reg = RegExp('(' + this.props.filterText + ')', 'gi');
+                  if (n[defCol.Type] === NodeType.File && n[defCol.Name] && n[defCol.Name].search(reg) === -1) {
+                    return;
+                  }
                 }
-                treenode.push(<li data-id={i} key={i} draggable="true" data-drag-handle="true" onDragEnd={this.dragEnd} onDragStart={this.dragStart}><Tree node = {n} filterText = {this.props.filterText} check={this.checkFn} /></li>);
-            }.bind(this));
+               
+              if(settings.Node.IsDraggable === true){
+               treenode.push(React.createElement("li", {"data-id": i, "data-type-id": n[defCol.Type], key: n[defCol.Type]+'.'+n[defCol.Id], draggable: "true", "data-drag-handle": "true", onDragEnd: this.dragEnd, onDragStart: this.dragStart}, React.createElement(Tree, {node: n, filterText: this.props.filterText, refresh: this.refreshFn})));
+              }else{
+                treenode.push(React.createElement("li", {"data-id": i, "data-type-id": n[defCol.Type], key: n[defCol.Type]+'.'+n[defCol.Id]}, React.createElement(Tree, {node: n, filterText: this.props.filterText, refresh: this.refreshFn})));
+              }
+               
+           }.bind(this));
         
-             
-        return (<ol className = {collapsedClass} onDragOver={this.dragOver}>{treenode}</ol>);
+        if(settings.Node.IsDraggable === true){     
+          return (React.createElement("ol", {className: collapsedClass, "data-type-id": node[defCol.Type], "data-id": node[defCol.Id], onDragOver: this.dragOver}, treenode));
         }else{
-          if(node[defCol.Type] === 0){
-            var treenode = (<li className="node-hidden" data-id={-1} data-drag-handle="true"></li>);
-            return (<ol className = {collapsedClass} onDragOver={this.dragOver}>{treenode}</ol>);
+          return (React.createElement("ol", {className: collapsedClass, "data-type-id": node[defCol.Type], "data-id": node[defCol.Id]}, treenode));  
+        }
+        }else{
+          if(settings.Node.IsDraggable === true){
+            var treenode = (React.createElement("li", {className: "node-hidden", "data-type-id": node[defCol.Type], "data-id": -1, "data-drag-handle": "true"}));
+            return (React.createElement("ol", {className: collapsedClass, "data-type-id": node[defCol.Type], "data-id": node[defCol.Id], onDragOver: this.dragOver}, treenode));
           }else{
-            return null;
+            var treenode = (React.createElement("li", {className: "node-hidden", "data-type-id": node[defCol.Type], "data-id": -1}));
+            return (React.createElement("ol", {className: collapsedClass, "data-type-id": node[defCol.Type], "data-id": node[defCol.Id]}, treenode));
           }
         }
       }
 });
 
-var ContentHightLight = React.createClass({
+var ContentHightLight = React.createClass({displayName: "ContentHightLight",
   render: function() {
     var filterT = this.props.filterText;
     var text = this.props.node[defCol.Name];
-    if (filterT && filterT !== "" && settings.Item.IsHightlightFilter === true){
+    if (text && settings.Item.IsAllowFilter === true && filterT && filterT !== "" && settings.Item.IsHightlightFilter === true){
         text = text.replace(new RegExp('(' + filterT + ')', 'gi'), '<span class="highlighted">$1</span>');
-        return (<span className="node-name" dangerouslySetInnerHTML={{__html: text}}></span>);
+        return (React.createElement("span", {className: "node-name", dangerouslySetInnerHTML: {__html: text}}));
     }
     
-    return (<span className="node-name">{text}</span>);
+    return (React.createElement("span", {className: "node-name"}, text));
   }
 });
 
-var FileNodeContent = React.createClass({
+var FileNodeContent = React.createClass({displayName: "FileNodeContent",
         checkFn: function(chck, scope){
              this.props.node[defCol.Checked] = this.props.node[defCol.Checked] === 1? 0: 1;
               React.findDOMNode(this.refs.checkbox).checked = this.props.node[defCol.Checked];
-              this.props.check(chck);
+              this.props.refresh(chck);
         },
         selectedNodeFn: function(){
-          this.props.selectedNode = this.props.node;
-          this.forceUpdate();
+          settings.CallBack.selectedNode = this.props.node;
+          //this.forceUpdate();
+          if(settings.CallBack.SelectedFn){
+            settings.CallBack.SelectedFn(this.props.node, this);
+          }
+          this.props.refresh();
+        },
+        editNode: function(scope){
+          EditNode(this);
+        },
+        delNode: function(scope){
+          DelNode(this);
         },
         render: function() {
             var node = this.props.node;
             var classSelect, boxcontrol, editRegionSite, deleteRegionSite,checkbox;
             var classCollapsed = 'glyphicon icon-null';
             
-            if (this.props.selectedNode && this.props.selectedNode[defCol.Id] === this.props.node[defCol.Id]) {
+            if (settings.CallBack.selectedNode && settings.CallBack.selectedNode[defCol.Id] === this.props.node[defCol.Id]) {
                 classSelect = 'select';
             }
        
             var classText = settings.Item.IsShowIcon === true?  settings.Icon.Item : '' ;
        
             var textConent = (
-               <a className = 'btn btn-xs' onClick={this.selectedNodeFn.bind(this)}>
-                   <i className={classText}></i>
-                   <ContentHightLight  node={this.props.node} filterText = {this.props.filterText} />
-               </a>
+               React.createElement("a", {className: "btn btn-xs", onClick: this.selectedNodeFn.bind(this)}, 
+                   React.createElement("i", {className: classText}), 
+                   React.createElement(ContentHightLight, {node: this.props.node, filterText: this.props.filterText})
+               )
             );
          
-            editRegionSite = settings.Item.IsShowEditButton === true?  (<a className="btn btn-xs" ><i className={settings.Icon.ItemEdit}></i></a>) : editRegionSite;
+            editRegionSite = settings.Item.IsShowEditButton === true?  (React.createElement("a", {className: "btn btn-xs edit", onClick: this.editNode.bind(this)}, React.createElement("i", {className: settings.Icon.ItemEdit}))) : editRegionSite;
           
-            deleteRegionSite = settings.Item.IsShowDelButton === true?  (<a className="btn btn-xs"><i className={settings.Icon.ItemDel}></i></a>) : deleteRegionSite;
+            deleteRegionSite = settings.Item.IsShowDelButton === true?  (React.createElement("a", {className: "btn btn-xs del", onClick: this.delNode.bind(this)}, React.createElement("i", {className: settings.Icon.ItemDel}))) : deleteRegionSite;
             
             if(settings.Node.IsShowCheckBox === true){
                 var checkstats =  this.props.node[defCol.Checked] === 1? true: false;
-                checkbox = (<input type="checkbox" checked={checkstats} ref="checkbox" onClick={this.checkFn.bind(this,node)} />);
+                checkbox = (React.createElement("input", {type: "checkbox", checked: checkstats, ref: "checkbox", onClick: this.checkFn.bind(this,node)}));
             }
             
             boxcontrol = settings.Item.IsShowItemMenu === true? (
-                <b className="control-group pull-right">
-                    {editRegionSite}
-                    {deleteRegionSite}
-                </b>
+                React.createElement("b", {className: "control-group pull-right"}, 
+                    editRegionSite, 
+                    deleteRegionSite
+                )
               ): boxcontrol;
           
           
-            return (<div className = {classSelect}>
-                <div className="tree-node-content">
-                    <a className = "btn btn-xs"><i className={classCollapsed}></i></a>
-                    <span className="node-content">
-                        {checkbox}
-                        {textConent}
-                        {boxcontrol}
-                    </span>
-                </div>
-            </div>);
+            return (React.createElement("div", {className: classSelect}, 
+                React.createElement("div", {className: "tree-node-content"}, 
+                    React.createElement("a", null, React.createElement("i", {className: classCollapsed})), 
+                    React.createElement("span", {className: "node-content"}, 
+                        checkbox, 
+                        textConent, 
+                        boxcontrol
+                    )
+                )
+            ));
     }
   });
 
-var Tree = React.createClass({
+var Tree = React.createClass({displayName: "Tree",
     getInitialState: function() {
-        var node = this.props.node;
         return {
-            node: node,
-            collapsed: (node.state && node.state.hasOwnProperty('collapsed')) ? node.state.collapsed : false
+            //node: node,
+            collapsed: settings.Node.IsCollapsedAll === null? false : settings.Node.IsCollapsedAll
         }
     },
     forceUp: function(){
-      this.setState({node: this.props.node});
-      console.log(this.props.node);
       this.forceUpdate();
     },
-    checkFn: function(node){
-        node = this.props.node;
-        nodes = node[defCol.Childs];
-        setStatusCheck(node, nodes);
-        this.setState({node: this.props.node});
-          
-        if(this.props.check){
-          this.props.check(node);
-        }
-    },
-    add: function(node){
-      AddNode(this)
-    },
-    remove: function(node){
-      DelNode(this);
-    },
-    edit: function(node){
-      EditNode(this);
+    refreshFn:function(node){
+      
+      node = this.props.node;
+            if (settings.Node.IsShowCheckBox === true) {
+                var nodes = node[defCol.Childs];
+                setStatusCheck(node, nodes);
+            }
+
+      this.forceUpdate();
+      
+      if(this.props.refresh){
+        this.props.refresh(node);
+      }
     },
     toggleCollapsed: function(collapsed) {
+      
+      //setOpNode(this.props.node[defCol.Id], collapsed)
         this.setState({
             collapsed: collapsed
         });
     },
     render: function() {
       
-      var collapsed = this.state.collapsed;
       var showRootNode = this.props.showRootNode !== undefined ? this.props.showRootNode: true;
-      
-      var content, nodechild;
-      if(this.props.node[defCol.Type] ===0){
-      
-         if(showRootNode === true){
-            content = (<TreeNodeContent node ={ this.props.node} selectedNode = {this.props.selectedNode} toggleCollapsed={this.toggleCollapsed}  collapsed={collapsed} check={this.checkFn} filterText = {this.props.filterText}/>) ;
-          }
-          
-          nodechild =  (<TreeNode node= { this.props.node} forceUp={this.forceUp.bind(this)} selectedNode = {this.props.selectedNode} collapsed={collapsed}  toggleCollapsed={this.toggleCollapsed} filterText = {this.props.filterText}  check={this.checkFn}  />);
-          
+      var isRootNode = false;
+      if(this.props.showRootNode === undefined){
+        this.state.collapsed = settings.Node.IsCollapsedAll === null? this.state.collapsed : settings.Node.IsCollapsedAll;
       }else{
-        content = (<FileNodeContent node ={ this.props.node} selectedNode = {this.props.selectedNode} toggleCollapsed={this.toggleCollapsed}  collapsed={collapsed} check={this.checkFn} filterText = {this.props.filterText} />) ;
+        isRootNode = true;
+      }
+      var collapsed = this.state.collapsed;
+      
+      var content , nodechild;
+
+      var scope = this;
+      var node = this.props.node;
+  
+      switch(node[defCol.Type]){
+       case NodeType.Folder: {
+            var Icon = {
+              Expand: settings.Icon.NodeExpand,
+              Collapsed: settings.Icon.NodeCollpased
+            };
+            if(showRootNode === true){
+              content = (React.createElement(TreeNodeContent, {node: node, isRootNode: isRootNode, Icon: Icon, toggleCollapsed: scope.toggleCollapsed, collapsed: collapsed, refresh: scope.refreshFn, filterText: scope.props.filterText})) ;
+            }
+            nodechild =  (React.createElement(TreeNode, {node: node, forceUp: scope.forceUp.bind(scope), collapsed: collapsed, toggleCollapsed: scope.toggleCollapsed, filterText: scope.props.filterText, refresh: scope.refreshFn}));
+            break;
+            
+       }
+       case NodeType.Group: {
+            var Icon = {
+              Expand: settings.Icon.GroupExpand,
+              Collapsed: settings.Icon.GroupCollpased
+            };
+
+            content = (React.createElement(TreeNodeContent, {node: node, Icon: Icon, toggleCollapsed: scope.toggleCollapsed, collapsed: collapsed, refresh: scope.refreshFn, filterText: scope.props.filterText})) ;
+            nodechild =  (React.createElement(TreeNode, {node: node, forceUp: scope.forceUp.bind(scope), collapsed: collapsed, toggleCollapsed: scope.toggleCollapsed, filterText: scope.props.filterText, refresh: scope.refreshFn}));
+            break;
+       }
+       default: {
+            content = (React.createElement(FileNodeContent, {node: node, toggleCollapsed: scope.toggleCollapsed, collapsed: collapsed, refresh: scope.refreshFn, filterText: scope.props.filterText})) ;
+            break;
+       }
       }
         
-      return (<groupNode>
-        {content}
-        {nodechild}
-      </groupNode>);
+      return (React.createElement("groupNode", null, 
+        content, 
+        nodechild
+      ));
     }
 });
+
+  element = el;
+  
+  settings = JSON.parse(JSON.stringify(opNode));
+  NodeType = JSON.parse(JSON.stringify(NType));
+  defCol = JSON.parse(JSON.stringify(defOriginal));
+  
+  contructTree(def, options);
+  
+  function contructTree(def, options){
+      if(def){
+        if(!def.Model){
+          return; 
+        }
+        defCol.Id = def.Id && def.Id !== "" ? def.Id : defCol.Id;
+        defCol.Name = def.Name && def.Name !== "" ? def.Name : defCol.Name;
+        defCol.Type = def.Type && def.Type !== "" ? def.Type : defCol.Type;
+        defCol.Childs = def.Childs && def.Childs !== "" ? def.Childs : defCol.Childs;
+        defCol.Checked = def.Checked && def.Checked !== "" ? def.Checked : defCol.Checked;
+        defCol.Count = def.Count && def.Count !== "" ? def.Count : defCol.Count;
+        defCol.Model = def.Model ? def.Model : defCol.Model;
+      }
+    
+      if(options){
+         if(options.Node){
+           var node = options.Node;
+           settings.Node.IsShowIcon = node.IsShowIcon !== undefined ? node.IsShowIcon : settings.Node.IsShowIcon;
+           settings.Node.IsDraggable = node.IsDraggable !== undefined ? node.IsDraggable : settings.Node.IsDraggable;
+           settings.Node.IsShowCheckBox = node.IsShowCheckBox !== undefined ? node.IsShowCheckBox : settings.Node.IsShowCheckBox;
+           settings.Node.IsShowRootNode = node.IsShowRootNode !== undefined ? node.IsShowRootNode : settings.Node.IsShowRootNode;
+           settings.Node.IsShowNodeMenu = node.IsShowNodeMenu !== undefined ? node.IsShowNodeMenu : settings.Node.IsShowNodeMenu;
+           settings.Node.IsShowCount = node.IsShowCount !== undefined ? node.IsShowCount : settings.Node.IsShowCount;
+         }
+         if(options.Item){
+           var node = options.Item;
+           settings.Item.IsShowItemMenu = node.IsShowItemMenu !== undefined ? node.IsShowItemMenu : settings.Item.IsShowItemMenu;
+           settings.Item.IsShowIcon = node.IsShowIcon !== undefined ? node.IsShowIcon : settings.Item.IsShowIcon;
+           settings.Item.IsHightlightFilter = node.IsHightlightFilter !== undefined ? node.IsHightlightFilter : settings.Item.IsHightlightFilter;
+           settings.Item.IsAllowFilter = node.IsAllowFilter !== undefined ? node.IsAllowFilter : settings.Item.IsAllowFilter;
+           
+         }
+         if(options.Icon){
+           // implement later
+         }
+         
+          if(options.CallBack){
+           var node = options.CallBack;
+    
+           settings.CallBack.SelectedNode = node.SelectedNode ? node.SelectedNode : settings.CallBack.SelectedNode;
+           settings.CallBack.filterText = node.filterText? node.filterText : '';
+           settings.CallBack.AddNode = node.AddNode && typeof node.AddNode === 'function' ? node.AddNode : settings.CallBack.AddNode;
+           settings.CallBack.EditNode = node.EditNode && typeof node.EditNode === 'function' ? node.EditNode : settings.CallBack.EditNode;
+           settings.CallBack.DelNode = node.DelNode && typeof node.DelNode === 'function' ? node.DelNode : settings.CallBack.DelNode;
+           settings.CallBack.SelectedFn =node.SelectedFn && typeof node.SelectedFn === 'function' ? node.SelectedFn : settings.CallBack.SelectedFn;
+           settings.CallBack.DragStart = node.DragStart && typeof node.DragStart === 'function' ? node.DragStart : settings.CallBack.DragStart;
+           settings.CallBack.DragOver = node.DragOver && typeof node.DragOver === 'function' ? node.DragOver : settings.CallBack.DragOver;
+           settings.CallBack.DragEnd = node.DragEnd && typeof node.DragEnd === 'function' ? node.DragEnd : settings.CallBack.DragEnd;
+         }
+         
+         if (options.Type) {
+
+              NodeType.Folder = options.Type.Folder ? options.Type.Folder : NodeType.Folder;
+              NodeType.Group = options.Type.Group ? options.Type.Group : NodeType.Group;
+              NodeType.File = options.Type.File ? options.Type.File : NodeType.File;
+          }
+      }
+      
+      RenderTree(element);
+  }
+  
+  
+  function RenderTree(element){
+    React.render(React.createElement(Tree, {node: defCol.Model, filterText: settings.CallBack.filterText, showRootNode: settings.Node.IsShowRootNode}), element )
+  }
+ 
+ this.refesh = function(){
+   RenderTree(element);
+ }
+ 
+ this.filter = function(filterText){
+   settings.CallBack.filterText = filterText? filterText : '';
+   RenderTree(element);
+ }
+ 
+ this.expandAll = function(){
+   settings.Node.IsCollapsedAll = false;
+   RenderTree(element);
+   settings.Node.IsCollapsedAll = null;
+ }
+ 
+ this.collapsedAll = function(){
+   settings.Node.IsCollapsedAll = true;
+   RenderTree(element);
+   settings.Node.IsCollapsedAll = null;
+ }
+ 
+ this.destroy = function () {
+
+			element = null;
+
+			// Remove draggable attributes
+			Array.prototype.forEach.call(el.querySelectorAll('[draggable]'), function (el) {
+				el.removeAttribute('draggable');
+			});
+
+		}
+
 
 function AddNode(scope){
   
@@ -368,102 +550,49 @@ function AddNode(scope){
     return;
   }
   
-  settings.CallBack.AddNode(scope.props.node).then(function(result){
-   // scope.props.node[defCol.Childs].push(result);
-      scope.setState({
-        node: scope.props.node
-      });
-    }, function(error){
-      scope.setState({
-        node: scope.state.node
-      });
-  });
+  settings.CallBack.AddNode(scope.props.node, scope);
 }
 
 function EditNode(scope){
   if(!settings.CallBack.EditNode){
     return;
   }
-      settings.CallBack.EditNode(scope.props.node).then(function(result){
-          scope.setState({
-            node: scope.props.node
-          });
-      }, function(error){
-        scope.setState({
-            node: scope.state.node
-          });
-      });
+  settings.CallBack.EditNode(scope.props.node, scope);
 }
 
 function DelNode(scope){
   if(!settings.CallBack.DelNode){
     return;
   }
-  settings.CallBack.DelNode(scope.props.node).then(function(result){
-      scope.setState({
-        node: scope.props.node
-      });
-  }, function(error){
-    scope.setState({
-        node: scope.state.node
-      });
-  });
+  settings.CallBack.DelNode(scope.props.node, scope);
 }
 
-function CMSTree(el, def, options) {
-  console.log(def);
-  if(def){
-    if(!def.Model){
-      return; 
-    }
-    defCol.Id = def.Id && def.Id !== "" ? def.Id : defCol.Id;
-    defCol.Name = def.Name && def.Name !== "" ? def.Name : defCol.Name;
-    defCol.Type = def.Type && def.Type !== "" ? def.Type : defCol.Type;
-    defCol.Childs = def.Childs && def.Childs !== "" ? def.Childs : defCol.Childs;
-    defCol.Checked = def.Checked && def.Checked !== "" ? def.Checked : defCol.Checked;
-    defCol.Count = def.Count && def.Count !== "" ? def.Count : defCol.Count;
-    defCol.Model = def.Model ? def.Model : defCol.Model;
-  }else{
+function SelectedFn(scope){
+  if(!settings.CallBack.SelectedFn){
     return;
   }
+  settings.CallBack.SelectedFn(scope.props.node, scope);
+}
+
+function CbDragover(e, scope, dragged, eventElm){
   
-  
-  
-  if(options){
-     if(options.Node){
-       var node = options.Node;
-       settings.Node.IsShowIcon = node.IsShowIcon && node.IsShowIcon !== "" ? node.IsShowIcon : settings.Node.IsShowIcon;
-       settings.Node.IsShowCheckBox = node.IsShowCheckBox && node.IsShowCheckBox !== "" ? node.IsShowCheckBox : settings.Node.IsShowCheckBox;
-       settings.Node.IsShowRootNode = node.IsShowRootNode && node.IsShowRootNode !== "" ? node.IsShowRootNode : settings.Node.IsShowRootNode;
-       settings.Node.IsShowNodeMenu = node.IsShowNodeMenu && node.IsShowNodeMenu !== "" ? node.IsShowNodeMenu : settings.Node.IsShowNodeMenu;
-       settings.Node.IsShowCount = node.IsShowCount && node.IsShowCount !== "" ? node.IsShowCount : settings.Node.IsShowCount;
-     }
-     if(options.Item){
-       var node = options.Item;
-       settings.Item.IsShowItemMenu = node.IsShowItemMenu && node.IsShowItemMenu !== "" ? node.IsShowItemMenu : settings.Item.IsShowItemMenu;
-       settings.Item.IsShowIcon = node.IsShowIcon && node.IsShowIcon !== "" ? node.IsShowIcon : settings.Item.IsShowIcon;
-       settings.Item.IsHightlightFilter = node.IsHightlightFilter && node.IsHightlightFilter !== "" ? node.IsHightlightFilter : settings.Item.IsHightlightFilter;
-     }
-     if(options.Icon){
-       // implement later
-     }
-     
-      if(options.CallBack){
-       var node = options.CallBack;
-       console.log(options.CallBack.filterText);
-       settings.CallBack.SelectedNode = node.SelectedNode && node.SelectedNode !== {} ? node.SelectedNode : settings.CallBack.SelectedNode;
-       settings.CallBack.filterText = node.filterText && node.filterText !== "" ? node.filterText : settings.CallBack.filterText;
-       settings.CallBack.AddNode = node.AddNode && typeof node.AddNode === 'function' ? node.AddNode : settings.CallBack.AddNode;
-       settings.CallBack.EditNode = node.EditNode && typeof node.EditNode === 'function' ? node.EditNode : settings.CallBack.EditNode;
-       settings.CallBack.DelNode = node.DelNode && typeof node.DelNode === 'function' ? node.DelNode : settings.CallBack.DelNode;
-       settings.CallBack.DragStart = node.DragStart && typeof node.DragStart === 'function' ? node.DragStart : settings.CallBack.DragStart;
-       settings.CallBack.DragOver = node.DragOver && typeof node.DragOver === 'function' ? node.DragOver : settings.CallBack.DragOver;
-       settings.CallBack.DragEnd = node.DragEnd && typeof node.DragEnd === 'function' ? node.DragEnd : settings.CallBack.DragEnd;
-     }
+    var contDrop = true;
+    if(settings.CallBack.DragOver && typeof settings.CallBack.DragOver === 'function'){
+       contDrop = settings.CallBack.DragOver(e, scope, dragged, eventElm);
+    }
+    return contDrop;
+}
+
+function CbDragend(e, scope){
+  if(settings.CallBack.DragEnd && typeof settings.CallBack.DragEnd === 'function'){
+    settings.CallBack.DragEnd(e, scope);
   }
-  console.log(settings.CallBack.filterText);
-  React.render(<Tree node={defCol.Model} selectedNode = {selectedNode} filterText = {settings.CallBack.filterText} showRootNode={true} />, el ) // document.getElementById("cms-tree") );
-  
+}
+
+function CbDragstart(e, scope){
+  if(settings.CallBack.DragStart && typeof settings.CallBack.DragStart === 'function'){
+       settings.CallBack.DragStart(e, scope);
+  }
 }
 
 function holderPlace(){
@@ -480,8 +609,8 @@ function holderPlace(){
 
 function dropReraw(from, to){
   dropData.props.node[defCol.Childs].splice(to, 0, dragData.props.node[defCol.Childs].splice(from, 1)[0])
-  //dropData.setState({node: dropData.state.node});
   dropData.props.forceUp();
+  
   console.log(dropData.props.node);
 }
 
@@ -514,7 +643,7 @@ function checkChildNode(ck, nodes){
    }
 
 function setStatusCheck(node, nodes){
- if(node[defCol.Type] === 0){
+ if(node[defCol.Type] !== NodeType.File){
    var leNodes = nodes.length;
    
    if(leNodes > 0){
@@ -535,46 +664,39 @@ function setStatusCheck(node, nodes){
 function dragEndFn(scope, e){
     e.preventDefault();
     e.stopPropagation();
+    
+    if(allowDrop === false){
+      return;
+    }
+    
     dragged.style.display = "block";
-    //console.log(over);
+    
     over.parentElement.removeChild(holderPlace());
+    
     var from = Number(dragged.dataset.id);
     //console.log(from);                    
     var to = Number(over.dataset.id);
     //console.log(to); 
-    
-    
-    //console.log(over.parentElement.dataset);
-    //console.log(this.state.node);
-    
-    //if(dragData.state.node[defCol.Id] === dropData.state.node[defCol.Id]){
-    //  scope.state.node[defCol.Childs].splice(to, 0, scope.state.node[defCol.Childs].splice(from, 1)[0]);
-    //  scope.setState({node: scope.state.node});
-    //}else{
-    //  dropReraw(from, to);
-    //}
-    
+   
     if(dragData.props.node[defCol.Id] === dropData.props.node[defCol.Id]){
-     // if (from < to) {
-      //  to--;
-      //}
+      if(from < to) to--;
+      if(e.InBefore === false) to++;
       scope.props.node[defCol.Childs].splice(to, 0, scope.props.node[defCol.Childs].splice(from, 1)[0]);
-      //scope.setState({node: scope.props.node});
+      //this.forceUpdate();
     }else{
       dropReraw(from, to, e);
     }
-    //scope.forceUpdate();
+    
     scope.props.forceUp();
     
-    if(settings.CallBack.DragEnd && typeof settings.CallBack.DragEnd === 'function'){
-          settings.CallBack.DragEnd(e, scope);
-    }
+    CbDragend(e, scope);
 }
 
 function dragOverFn(scope, e){
     e.preventDefault();
     e.stopPropagation();
-          
+  
+        
   dropData = scope;
    var targetRow = e.target;
         
@@ -593,41 +715,54 @@ function dragOverFn(scope, e){
     }
     
     over = eventElm;
-//console.log(over);
+
     if (eventElm.getAttribute("data-drag-handle") !== "true") {
         return;
     }
     
-    var contDrop = true;
-    if(settings.CallBack.DragOver && typeof settings.CallBack.DragOver === 'function'){
-       contDrop = settings.CallBack.DragOver(e, scope, dragged, eventElm);
-    }
+      allowDrop = false;
+      
+    var contDrop = CbDragover(e, scope, dragged, eventElm);
     
     if(contDrop && contDrop === false){
       return;
     }
-    //var select = Number(eventElm.dataset.id);
-    //console.log(select);
-    //if(this.state.node[defCol.Childs][select] && this.state.node[defCol.Childs][select].length === 0){
-    //  var ca =  eventElm.getElementsByTagName("ol")[0];
-    //  if(ca){
-    //    ca.className  =" "  
-    //  }
-    //}
     
-    var posEventEl = e.clientY - eventElm.offsetTop;
+    //var posEventEl = e.pageY - 120 - eventElm.offsetTop;
+    var posEventEl = e.pageY - eventElm.offsetTop;
     
     var heightOfOver = eventElm.offsetHeight /2;
     var parent = eventElm.parentElement;
     
-    
+    //console.log('Y: ' + posEventEl + ' offsetTop' + '???' + heightOfOver);
     if(posEventEl > heightOfOver){
       parent.insertBefore(holderPlace(), eventElm.nextElementSibling);
-      //e.InBefore = true;
+      e.InBefore = false;
     }else if(posEventEl < heightOfOver){
        parent.insertBefore(holderPlace(), eventElm);
-     //  e.InBefore = false;
+       e.InBefore = true;
     }
+    
+    allowDrop = true;
+}
+
+function dragStartFn(scope, e){
+    //  e.preventDefault();
+    e.stopPropagation();
+    
+    allowDrop = false;
+    
+    dragged = e.currentTarget; 
+    e.dataTransfer.effectAllowed = 'move';
+    dragData = scope;
+    console.log(dragData);
+
+    e.dataTransfer.setData("text/html", e.currentTarget);
+    
+    CbDragstart(e, scope);
+}
+
+
 }
 
 CMSTree.create = function (el, def, options) {
